@@ -1,4 +1,4 @@
-# Eneralized Fine-Tuning Repo
+# Generalized Fine-Tuning Repo
 > Intelligent Q&A, retrieval-augmented generation (RAG), and fine‑tuning pipeline for public safety / emergency alert system content.
 
 ## 1. Overview
