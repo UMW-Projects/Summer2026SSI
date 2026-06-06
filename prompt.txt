@@ -1,0 +1,10 @@
+1) Analyze all customer feedback for Crimson Coward Store 24 over the last 30 days. Identify:
+    top complaints
+    recurring operational issues
+    staff performance trends
+    menu quality concerns
+    recommended actions ranked by business impact.
+
+2) Compare Vocelli’s locations by customer sentiment, delivery performance, and food quality. Predict which stores are at risk of declining customer retention.
+
+

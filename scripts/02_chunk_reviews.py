@@ -91,6 +91,10 @@ def main(
                     "business_location": r.get("business_location"),
                     "source": r.get("source"),
 
+                    "restaurant_id": r["restaurant_id"],
+                    "restaurant_name": r["restaurant_name"],
+                    "restaurant_location": r["restaurant_location"],
+
                     "themes": themes,
                     "theme_hits": theme_hits,         # auditable
                     "sentiment": sent,                # includes label

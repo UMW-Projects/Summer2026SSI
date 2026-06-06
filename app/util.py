@@ -2,6 +2,7 @@
 import re
 from typing import Any, Dict, Optional, Tuple
 import dateparser
+from app.restaurant import make_restaurant_id
 
 URL_RE = re.compile(r"https?://\S+")
 JUNK_HINT_RE = re.compile(r"\b(wanderlog|facebook|youtube|tiktok|read more|report review)\b", re.I)
@@ -17,8 +18,8 @@ OWNER_BLOCK2_RE = re.compile(
 )
 
 # Heuristic "signature" patterns (brand + sign-off lines)
-BRAND_HINT_RE = re.compile(
-    r"(?i)\bcrimson\s+coward\b|\bcrimson\s+coward\s+team\b|—\s*crimson\s+coward|-+\s*crimson\s+coward"
+SIGNOFF_RE = re.compile(
+    r"(?i)(the team|management|guest services|customer care)"
 )
 
 THANKS_RE = re.compile(r"(?i)\bthank(s| you)\b")
@@ -35,6 +36,7 @@ OWNER_TAIL_CUE_RE = re.compile(
     r"come back|visit again|next time|hope to see you"
     r")\b"
 )
+
 
 def split_owner_response_tail(text: str, tail_window: int = 450, min_owner_len: int = 40) -> Tuple[str, Optional[str]]:
     """
@@ -123,25 +125,30 @@ def split_owner_response(text: str) -> Tuple[str, Optional[str]]:
 
 
 def is_owner_response_text(text: str) -> bool:
-    """
-    Robust owner-response detection for standalone texts.
-    Used when the record is itself an owner reply (or the split-out owner part).
-    """
-    t = clean_text(text).lower()
+    t = clean_text(text)
+
     if not t:
         return False
 
-    # Strong signals
-    if "owner response" in t or "management response" in t:
-        return True
-    if BRAND_HINT_RE.search(t) and (THANKS_RE.search(t) or APOLOGY_RE.search(t) or INVITE_BACK_RE.search(t)):
+    lower = t.lower()
+
+    if "owner response" in lower:
         return True
 
-    # Weaker heuristic (keep conservative to avoid misclassifying customers)
-    starts_reply = t.startswith(("hi ", "hello ", "hey "))
-    mentions_brand = bool(BRAND_HINT_RE.search(t))
-    return bool(starts_reply and mentions_brand)
+    if SIGNOFF_RE.search(t):
+        return True
 
+    if (
+        THANKS_RE.search(t)
+        and (
+            "we appreciate" in lower
+            or "please reach out" in lower
+            or "contact us" in lower
+        )
+    ):
+        return True
+
+    return False
 
 def parse_date_to_iso(date_str: str) -> Optional[str]:
     if not date_str:
@@ -221,6 +228,8 @@ def normalize_review(
 
     raw_text = clean_text(str(raw.get("text", "")))
     date_raw = clean_text(str(raw.get("date", "")))
+    restaurant_id = make_restaurant_id(
+                    business_name, business_location)
 
     if looks_like_junk(raw_text):
         return None
@@ -250,8 +259,9 @@ def normalize_review(
         "date_raw": date_raw,
         "date": parse_date_to_iso(date_raw),
         "is_owner_response": False,  # this record is customer-facing by definition
-        "business_name": business_name,
-        "business_location": business_location,
+        "restaurant_id": restaurant_id,
+        "restaurant_name": business_name,
+        "restaurant_location": business_location,
         "source": source,
     }
 

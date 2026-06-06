@@ -66,6 +66,29 @@ def wants_workflow_output(query: str) -> bool:
 def embed_text(client: OpenAI, text: str, embed_model: str) -> List[float]:
     return client.embeddings.create(model=embed_model, input=[text]).data[0].embedding
 
+RESTAURANTS = {
+
+    "crimson coward":
+        "crimson_coward_fredericksburg_va",
+
+    "dave's hot chicken":
+        "daves_hot_chicken_fairfax_va",
+
+    "raising cane's":
+        "raising_canes_woodbridge_va",
+}
+
+def detect_restaurant(query: str):
+
+    q = query.lower()
+
+    for name, rid in RESTAURANTS.items():
+
+        if name in q:
+            return rid
+
+    return None
+
 # ------------------------
 # Retrieval + aggregation
 # ------------------------
@@ -86,7 +109,15 @@ def retrieve(
 
     qvec = embed_text(client, query, embed_model)
 
-    filt = {"is_owner_response": False} if exclude_owner_responses else None
+    restaurant_id = detect_restaurant(query)
+
+    filt = {}
+
+    if exclude_owner_responses:
+        filt["is_owner_response"] = False
+
+    if restaurant_id:
+        filt["restaurant_id"] = {"$eq": restaurant_id}
 
     res = index.query(
         vector=qvec,
@@ -99,10 +130,15 @@ def retrieve(
     matches = getattr(res, "matches", None) or (res.get("matches", []) if isinstance(res, dict) else []) or []
     out: List[Dict[str, Any]] = []
 
+    MIN_SCORE = 0.65
     for m in matches:
         mdict = _as_dict(m)
         md = mdict.get("metadata", {}) or {}
-
+        if restaurant_id:
+            out = [
+                x for x in out
+                if x.get("restaurant_id") == restaurant_id
+            ]
         out.append({
             "id": mdict.get("id"),
             "score": float(mdict.get("score", 0.0)),
@@ -112,8 +148,14 @@ def retrieve(
             "themes": md.get("themes", []),
             "compound": md.get("compound"),
             "review_id": md.get("review_id"),
+            "restaurant_id": md.get("restaurant_id"),
+            "restaurant_name": md.get("restaurant_name"),
+            "restaurant_location": md.get("restaurant_location"),
         })
 
+        score = float(mdict.get("score", 0.0))
+        if score < MIN_SCORE:
+            continue
     return out
 
 def aggregate_contexts(
@@ -201,8 +243,17 @@ def build_prompt(
             txt = txt[:max_chunk_chars].rstrip() + "…"
 
         ctx_lines.append(
-            f"- [chunk_id={c['id']}] (review_id={c.get('review_id')}, rating={c.get('rating')}, date={c.get('date')}, score={c.get('score'):.3f}, compound={c.get('compound')}) {txt}"
-        )
+                    f"""
+                [Restaurant]
+                {c.get('restaurant_name')}
+
+                [Chunk]
+                {c['id']}
+
+                [Review]
+                {txt}
+                """
+                )
 
     ctx_block = "\n".join(ctx_lines)
 
@@ -211,13 +262,24 @@ def build_prompt(
     isolated_rule = agg.get("isolated_issues_by_rule", [])
     theme_stats = agg.get("theme_stats", [])
 
-    system = (
-        "You are a customer feedback analyst.\n"
-        "You MUST respond with a single JSON object (no markdown).\n"
-        "Use ONLY the provided review chunks as evidence.\n"
-        "If the retrieved chunks do not support a claim, say: "
-        "\"Not enough evidence in retrieved reviews.\""
-    )
+    system = """
+        You are a customer review analyst.
+
+        IMPORTANT:
+
+        If a user asks about a specific restaurant,
+        ONLY use reviews from that restaurant.
+
+        Never combine evidence from different restaurants.
+
+        If retrieved reviews contain multiple restaurants,
+        ignore all restaurants except the one requested.
+
+        If insufficient evidence exists,
+        respond:
+
+        'Not enough evidence in retrieved reviews.'
+    """
 
     # Same JSON schema always (stable for Streamlit),
     # but when workflow=False: sms_draft + ops_recommendations should be empty/minimal.

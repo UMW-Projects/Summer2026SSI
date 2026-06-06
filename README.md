@@ -1,266 +1,518 @@
-# Generalized Fine-Tuning Repo
-> Intelligent Q&A, retrieval-augmented generation (RAG), and fine‑tuning pipeline for public safety / emergency alert system content.
+# AI Review Analysis & RAG Chatbot
 
-## 1. Overview
+A beginner-friendly Python project that:
 
-This repository implements a full lifecycle for an emergency alert domain chatbot:
+* Cleans customer reviews
+* Detects owner responses
+* Chunks reviews into AI-searchable pieces
+* Stores embeddings in Pinecone
+* Lets you ask questions about reviews using AI (RAG)
 
-1. Source acquisition (PDFs, web pages, curated text files)
-2. Preprocessing & normalization into structured JSONL training/eval corpora
-3. Dataset validation & repair utilities
-4. Optional OpenAI fine‑tuning pipeline
-5. Embedding generation and migration from local ChromaDB to Pinecone serverless vector storage
-6. Retrieval‑augmented chat (CLI and Streamlit UI) with automatic external web enrichment
+This project is designed for beginners learning:
 
-The current production vector backend is **Pinecone** (`fcc-chatbot-index`) using `text-embedding-3-small` (1536 dims). Local **ChromaDB** is retained for troubleshooting and legacy migration scripts but excluded from version control to avoid large binary commits.
+* Python packages
+* AI embeddings
+* Retrieval-Augmented Generation (RAG)
+* Pinecone vector databases
+* OpenAI APIs
 
-## 2. Key Features
+---
 
-- Hybrid retrieval: internal curated corpus + targeted external search (SerpAPI) with on-the-fly scraping
-- Automatic embedding of newly discovered pages (length threshold & de-duplication strategies)
-- Deterministic or growth-focused ID strategies for Pinecone (`url` vs `content`)
-- Streamlit web UI (`VectordB/streamlit_app.py`) & CLI chat (`VectordB/ChromaChat2.py`)
-- Dataset creation / merging / validation utilities (`archive/preprocessing/*`)
-- Migration scripts: Chroma → Pinecone, dimensional fixes, bulk embedding upload
-- Transparent logging: “Added X new embeddings. Pinecone total: Y”
-- Domain filtering: excludes `fcc.gov` domains where required
+# What This Project Does
 
-## 3. High-Level Architecture
+Imagine you have hundreds or thousands of customer reviews from:
 
-```
-	       ┌──────────────────────────────┐
-	       │     Raw Source Material      │
-	       │  PDFs | Web Pages | Texts    │
-	       └──────────────┬──────────────┘
-			      │
-		      (Ingestion / Scraping)
-			      │
-	       ┌──────────────▼──────────────┐
-	       │  Preprocessing / Cleaning   │
-	       │  create_jsonl, merge_jsonl  │
-	       └──────────────┬──────────────┘
-			      │
-			Validation & Fixes
-		     (format_validation, etc.)
-			      │
-		     Fine-Tuning (Optional)
-		       train_gpt.py, chat.py
-			      │
-	       ┌──────────────▼──────────────┐
-	       │  Embeddings Generation      │
-	       │  text-embedding-3-small     │
-	       └──────────────┬──────────────┘
-			      │
-		      Vector Storage Layer
-		   Pinecone  <—>  ChromaDB* (legacy)
-			      │
-	       ┌──────────────▼──────────────┐
-	       │     Retrieval & RAG Chat    │
-	       │  Streamlit | CLI | External │
-	       └──────────────────────────────┘
-```
-*ChromaDB retained mainly for migration & fallback, not primary.
+* Google Reviews
+* Yelp
+* TripAdvisor
+* etc.
 
-## 4. Repository Structure (Selected)
+This project helps you:
 
-| Path | Purpose |
-|------|---------|
-| `VectordB/ChromaChat2.py` | Core CLI chat with Pinecone retrieval & auto-save of external docs |
-| `VectordB/streamlit_app.py` | Streamlit UI providing interactive chat and embedding persistence |
-| `VectordB/run_chat_once.py` | Single-shot query test harness (good for verifying embeddings added) |
-| `VectordB/PINECONE_INTEGRATION.md` | Notes on vector migration & Pinecone configuration |
-| `VectordB/migrate_chroma_to_pinecone.py` | Bulk migration from local Chroma collections to Pinecone |
-| `VectordB/simple_migrate.py` | Minimal migration example / quick start script |
-| `VectordB/fix_pinecone_dimension.py` | Utilities when dimension mismatches occur |
-| `VectordB/embed_and_upload_texts.py` | Batch embed raw text files & upload to Pinecone |
-| `VectordB/check_root_chroma.py` | Inspect legacy Chroma root store |
-| `VectordB/pinecone_chat.py` | Earlier Pinecone chat prototype (superseded by ChromaChat2) |
-| `archive/preprocessing/*.py` | Dataset generation, merging, validation scripts |
-| `archive/finetuning/*.py` | Fine-tuning orchestration / monitoring |
-| `doc/datasets/*.jsonl` | Generated & validated datasets (intermediate & final forms) |
-| `check_pinecone_stats.py` | Pinecone index stats utility (vector count, dimension) |
-| `fixing-jsonl-files.py` | Repairs / improvements for existing JSONL training data |
+1. Clean the review data
+2. Separate customer reviews from owner replies
+3. Split reviews into smaller searchable chunks
+4. Store them in Pinecone
+5. Ask AI questions like:
 
-## 5. Data Pipeline Details
+   * "What do customers complain about most?"
+   * "How do people feel about service speed?"
+   * "What recurring food quality issues appear?"
 
-### 5.1 Ingestion
-- PDF and web scraping utilities gather raw domain-relevant content.
-- Pages shorter than a configurable minimum (default ~200 chars after cleaning) are skipped.
+The AI answers only using your review data.
 
-### 5.2 Preprocessing
-Scripts in `archive/preprocessing/` transform raw text and PDF extracts into structured JSONL with fields like `prompt`, `completion`, metadata tags, and optionally source attribution.
+---
 
-### 5.3 Validation & Repair
-`format_validation.py`, `validate_dataset.py`, and `fixing-jsonl-files.py` check for:
-- JSONL structural errors
-- Missing fields / empty completions
-- Length constraints for prompts/completions
-- Duplicate or near-duplicate entries
+# Project Structure
 
-### 5.4 Fine-Tuning (Optional)
-Located in `archive/finetuning/` (e.g., `train_gpt.py`, `individual_finetune_chat.py`). These scripts assume properly formatted JSONL files meeting provider requirements. They may require mapping into OpenAI’s fine-tuning schema or similar service-specific formatting.
+Your project should look like this:
 
-### 5.5 Embedding Generation & Storage
-- Current embedding model: `text-embedding-3-small` (dimension 1536)
-- Migration scripts moved legacy Chroma vectors into Pinecone serverless index `fcc-chatbot-index`.
-- New content discovered via queries is chunked and embedded on-the-fly.
-
-### 5.6 Retrieval & RAG
-- Combines internal Pinecone semantic search with targeted SerpAPI queries when context insufficient.
-- External results (HTML pages) scraped, cleaned, chunked, embedded, then upserted back into Pinecone (growth loop).
-
-## 6. Environment & Dependencies
-
-### 6.1 Python Version
-Developed & tested on Python 3.13 (earlier 3.11+ likely compatible). Use virtual environments for isolation.
-
-### 6.2 Installation (All-In-One)
-```powershell
-# From repo root
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-For minimal chat-only environment you can alternatively install `VectordB/requirements.txt`.
-
-### 6.3 Core Libraries
-- `openai` – embeddings & (optionally) chat/fine-tuning
-- `pinecone-client` – vector index operations
-- `chromadb` – legacy / fallback local store
-- `google-search-results` (SerpAPI) – targeted web search
-- `beautifulsoup4`, `requests` – scraping / HTML parsing
-- `streamlit` – web UI
-- `tqdm`, `numpy`, `scikit-learn` – progress, array ops, auxiliary tooling
-
-## 7. Required Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key for embeddings & completion | `sk-...` |
-| `SERPAPI_API_KEY` or `SERPAPI_KEY` | SerpAPI key for external search enrichment | `abcdef123...` |
-| `PINECONE_API_KEY` | Pinecone serverless API key | `pcn-...` |
-| `PINECONE_INDEX` / `PINECONE_INDEX_NAME` | Target Pinecone index (default if unset) | `fcc-chatbot-index` |
-| `PINECONE_ID_STRATEGY` | `url` (deduplicate) or `content` (always grows) | `content` during testing |
-
-You may place these in a `.env` file at the root or use Streamlit secrets (`.streamlit/secrets.toml`). The app loads `.env` first, then overrides with Streamlit secrets where present.
-
-### 7.1 ID Strategy Explained
-- `url` (default): Vector IDs = URL + chunk index. Upserts update existing vectors → stable count (preferred for production de-duplication).
-- `content`: Vector IDs = hash(content). Every unique chunk grows the index even if from same URL → useful for debugging growth and ensuring new embeddings appear.
-
-## 8. Running the Chat Interfaces
-
-### 8.1 CLI (Rapid Testing)
-```powershell
-python VectordB/ChromaChat2.py
-```
-Enter a query. If insufficient internal context is found, the system performs external SerpAPI searches, scrapes selected results, embeds them, and reports growth:
-```
-✅ Added 9 new embeddings. Pinecone total: 1,854
-```
-
-### 8.2 Single-Query Harness
-```powershell
-python VectordB/run_chat_once.py "Wireless Emergency Alerts site:ready.gov -filetype:pdf"
-```
-
-### 8.3 Streamlit Web UI
-```powershell
-streamlit run VectordB/streamlit_app.py
-```
-Sidebar shows Pinecone stats and new embeddings added per query cycle.
-
-## 9. Crafting Queries that Add New Embeddings
-
-Use site scoping and PDF exclusion to bias toward HTML articles of sufficient length:
-```
-Wireless Emergency Alerts site:ready.gov -filetype:pdf
-IPAWS architecture site:fema.gov -filetype:pdf
-emergency alert system security guidance site:cisa.gov -filetype:pdf
-Common Alerting Protocol overview site:nist.gov -filetype:pdf
-```
-Pages below the minimum length threshold (≈200 chars after cleaning) are skipped.
-
-## 10. Migration & Utility Scripts (VectordB)
-
-| Script | Purpose |
-|--------|---------|
-| `migrate_chroma_to_pinecone.py` | Full migration of legacy local vectors into Pinecone |
-| `simple_migrate.py` | Quick start minimal migration example |
-| `fix_pinecone_dimension.py` | Resolves dimension mismatch issues (e.g., wrong embedding model used earlier) |
-| `embed_and_upload_texts.py` | Batch embeds raw text files into Pinecone |
-| `migrate_root_chroma.py` | Moves root Chroma store artifacts into Pinecone |
-| `check_root_chroma.py` | Inspect existing Chroma collections for diagnostics |
-| `pinecone_chat.py` | Prototype; superseded by `ChromaChat2.py` |
-| `check_pinecone_stats.py` | Print index vector counts & dimension |
-| `run_chat_once.py` | Non-interactive single query test harness |
-
-## 11. Training Data Improvement
-
-`fixing-jsonl-files.py` and scripts under `archive/preprocessing/` help refine dataset quality:
-- Merge partial datasets → consolidated corpus
-- Remove malformed prompt/completion pairs
-- Ensure consistent JSONL schema for fine-tuning & evaluation
-
-## 12. Fine-Tuning Workflow (Optional)
-
-1. Generate / clean dataset JSONL (prompt/completion pairs)
-2. Validate format & size constraints
-3. Upload to provider (e.g., OpenAI) via corresponding scripts in `archive/finetuning/`
-4. Monitor status with `list_jobs.py`, `check_status.py`
-5. Evaluate results using `chat.py` or `individual_finetune_chat.py`
-
-## 13. Troubleshooting
-
-| Issue | Symptom | Resolution |
-|-------|---------|------------|
-| No new embeddings added | Log shows 0 added despite upserts | Switch `PINECONE_ID_STRATEGY=content` & ensure query surfaces new long pages |
-| Dimension mismatch | Pinecone rejects vectors | Confirm model = `text-embedding-3-small`; run `fix_pinecone_dimension.py` if needed |
-| Empty responses | Chat returns minimal text | Check OPENAI_API_KEY validity & rate limits; verify embeddings exist (`check_pinecone_stats.py`) |
-| SerpAPI failures | External search step skipped | Ensure `SERPAPI_API_KEY` set; fallback logic may reduce enrichment |
-| Large binary repo size | Git push rejects >100MB file | Confirm `.gitignore` excludes `chroma_fcc_storage/` artifacts |
-| Repeated overwrites | Pinecone count stable | Expected when using `url` strategy; switch to `content` for growth testing |
-
-## 14. Security & Operational Notes
-- Keep API keys in `.env` (not committed) or Streamlit secrets.
-- SerpAPI and OpenAI incur cost—batch operations strategically.
-- Respect robots.txt & fair use when scraping; implement rate limiting if scaling.
-- Consider adding caching for repeated external queries.
-
-## 15. Roadmap / Potential Enhancements
-- Add evaluation harness comparing RAG vs fine-tuned model responses
-- Automated dataset deduplication with semantic similarity thresholds
-- Switch to reranker model for improved context ordering
-- Integrate structured citation output (source URLs with confidence)
-- Add unit tests around chunking & ID generation logic
-
-## 16. Contributing
-Fork and open a Pull Request (PR). Include a summary of vector index impact (added / updated embeddings) in description when modifying retrieval logic.
-
-## 17. License
-License information not yet specified. Add appropriate license file before wider distribution.
-
-## 18. Quick Start (TL;DR)
-```powershell
-# Setup
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# Environment (PowerShell)
-$env:OPENAI_API_KEY="sk-..."
-$env:SERPAPI_API_KEY="..."
-$env:PINECONE_API_KEY="pcn-..."
-$env:PINECONE_INDEX="fcc-chatbot-index"
-$env:PINECONE_ID_STRATEGY="content"  # optional for growth
-
-# Run Streamlit
-streamlit run VectordB/streamlit_app.py
-
-# Or CLI
-python VectordB/ChromaChat2.py
+```text
+project_root/
+│
+├── app/
+│   ├── __init__.py
+│   ├── rag.py
+│   ├── sentiment.py
+│   ├── themes.py
+│   └── util.py
+│
+├── scripts/
+│   ├── __init__.py
+│   ├── clean_reviews.py
+│   ├── chunk_reviews.py
+│   ├── index_pinecone.py
+│   ├── query_bot.py
+│   └── eval.py
+│
+├── data/
+│   ├── raw_reviews.json
+│   ├── cleaned_reviews.json
+│   └── chunks.jsonl
+│
+├── .env
+├── requirements.txt
+└── README.md
 ```
 
 ---
-**Need help?** Use `run_chat_once.py` with a targeted query to confirm embeddings growth or `check_pinecone_stats.py` to inspect index health.
 
+# Step 1 — Install Python
+
+Install Python 3.10 or newer.
+
+Check if Python is installed:
+
+```bash
+python --version
+```
+
+or:
+
+```bash
+python3 --version
+```
+
+---
+
+# Step 2 — Create a Virtual Environment
+
+A virtual environment keeps project packages isolated.
+
+## Mac/Linux
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+## Windows
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+After activation, your terminal should show:
+
+```text
+(venv)
+```
+
+---
+
+# Step 3 — Install Dependencies
+
+Create a `requirements.txt` file:
+
+```text
+python-dotenv
+openai
+pinecone
+tiktoken
+tqdm
+nltk
+```
+
+Then install everything:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+# Step 4 — Create a `.env` File
+
+Create a file named:
+
+```text
+.env
+```
+
+Example:
+
+```env
+OPENAI_API_KEY=your_openai_key_here
+PINECONE_API_KEY=your_pinecone_key_here
+
+PINECONE_INDEX=reviews-index
+PINECONE_CLOUD=aws
+PINECONE_REGION=us-east-1
+
+OPENAI_EMBED_MODEL=text-embedding-3-small
+
+BUSINESS_NAME=My Restaurant
+BUSINESS_LOCATION=New York
+REVIEW_SOURCE=google
+```
+
+---
+
+# Step 5 — Add Your Review Data
+
+Put your raw reviews into:
+
+```text
+data/raw_reviews.json
+```
+
+Example format:
+
+```json
+[
+  {
+    "author": "John",
+    "rating": 5,
+    "text": "Amazing food and great service!",
+    "date": "2025-01-01"
+  }
+]
+```
+
+---
+
+# IMPORTANT — Why We Use `python -m`
+
+This project uses imports like:
+
+```python
+from app.util import normalize_review
+```
+
+Because of this, you MUST run scripts using:
+
+```bash
+python -m
+```
+
+This tells Python:
+
+> "Treat this project like a package."
+
+Without `-m`, imports may fail.
+
+---
+
+# Step 6 — Clean the Reviews
+
+Run:
+
+```bash
+python -m scripts.clean_reviews \
+  --in data/raw_reviews.json \
+  --out data/cleaned_reviews.json
+```
+
+What this script does:
+
+* Normalizes review format
+* Detects owner responses
+* Cleans bad data
+* Creates structured review records
+
+Output:
+
+```text
+data/cleaned_reviews.json
+```
+
+---
+
+# Step 7 — Chunk the Reviews
+
+Run:
+
+```bash
+python -m scripts.chunk_reviews \
+  --in data/cleaned_reviews.json \
+  --out data/chunks.jsonl
+```
+
+What this does:
+
+* Splits long reviews into smaller AI-searchable chunks
+* Adds sentiment analysis
+* Detects themes
+* Creates metadata
+
+Optional:
+Include owner responses too:
+
+```bash
+python -m scripts.chunk_reviews \
+  --in data/cleaned_reviews.json \
+  --out data/chunks.jsonl \
+  --include_owner
+```
+
+Output:
+
+```text
+data/chunks.jsonl
+```
+
+---
+
+# Step 8 — Upload Embeddings to Pinecone
+
+Run:
+
+```bash
+python -m scripts.index_pinecone \
+  --chunks data/chunks.jsonl \
+  --reset
+```
+
+What this does:
+
+1. Converts text into embeddings using OpenAI
+2. Creates a Pinecone vector index
+3. Uploads vectors for semantic search
+
+The `--reset` flag clears old vectors first.
+
+---
+
+# Step 9 — Ask Questions About Reviews
+
+Run:
+
+```bash
+python -m scripts.query_bot \
+  --q "What are the main customer complaints?"
+```
+
+Example questions:
+
+```bash
+python -m scripts.query_bot \
+  --q "What do customers think about pricing?"
+```
+
+```bash
+python -m scripts.query_bot \
+  --q "Are there recurring complaints about cleanliness?"
+```
+
+---
+
+# Debug Mode
+
+To see retrieved chunks and grounding information:
+
+```bash
+python -m scripts.query_bot \
+  --q "What are customers saying about service?" \
+  --debug
+```
+
+---
+
+# Step 10 — Run Evaluation Tests
+
+Run:
+
+```bash
+python -m scripts.eval
+```
+
+This checks:
+
+* Output structure
+* AI grounding
+* SMS formatting
+* Required fields
+
+Output:
+
+```text
+data/eval_results.jsonl
+```
+
+---
+
+# Common Beginner Errors
+
+## Error: `ModuleNotFoundError: No module named 'app'`
+
+Cause:
+You ran the script incorrectly.
+
+Wrong:
+
+```bash
+python scripts/clean_reviews.py
+```
+
+Correct:
+
+```bash
+python -m scripts.clean_reviews
+```
+
+---
+
+## Error: Missing API Keys
+
+Cause:
+Your `.env` file is missing or incorrect.
+
+Fix:
+Make sure:
+
+```env
+OPENAI_API_KEY=...
+PINECONE_API_KEY=...
+```
+
+exist in `.env`.
+
+---
+
+## Error: `No module named dotenv`
+
+Fix:
+
+```bash
+pip install python-dotenv
+```
+
+---
+
+## Error: `chunks.jsonl is empty`
+
+Cause:
+The cleaning step failed or input reviews are empty.
+
+Fix:
+Run the cleaning script again and check output.
+
+---
+
+# What Is Pinecone?
+
+Pinecone is a vector database.
+
+Instead of searching keywords, it searches meaning.
+
+Example:
+
+* User asks:
+
+  > "Do customers complain about slow service?"
+* Pinecone finds semantically similar review chunks even if they do not use the exact words "slow service."
+
+---
+
+# What Is RAG?
+
+RAG = Retrieval-Augmented Generation.
+
+It works like this:
+
+```text
+User Question
+      ↓
+Find Relevant Review Chunks
+      ↓
+Send Chunks to AI
+      ↓
+Generate Grounded Answer
+```
+
+This prevents hallucinations because the AI answers using your real review data.
+
+---
+
+# Recommended Beginner Workflow
+
+Run these in order:
+
+## 1. Clean reviews
+
+```bash
+python -m scripts.clean_reviews \
+  --in data/raw_reviews.json \
+  --out data/cleaned_reviews.json
+```
+
+## 2. Chunk reviews
+
+```bash
+python -m scripts.chunk_reviews \
+  --in data/cleaned_reviews.json \
+  --out data/chunks.jsonl
+```
+
+## 3. Index into Pinecone
+
+```bash
+python -m scripts.index_pinecone \
+  --chunks data/chunks.jsonl \
+  --reset
+```
+
+## 4. Query the chatbot
+
+```bash
+python -m scripts.query_bot \
+  --q "What issues appear most often?"
+```
+
+---
+
+# Recommended Improvements
+
+As you learn more, you can add:
+
+* FastAPI backend
+* Streamlit frontend
+* LangChain
+* Better theme classification
+* Better evaluation metrics
+* Multi-business support
+* Dashboard UI
+* Automated review scraping
+
+---
+
+# Final Notes
+
+This project teaches real-world AI engineering concepts:
+
+* embeddings
+* vector databases
+* semantic search
+* RAG pipelines
+* AI grounding
+* data preprocessing
+
+If you are a beginner:
+
+* Start slowly
+* Run one script at a time
+* Print intermediate outputs
+* Read the JSON files to understand the data flow
+
+That is how real AI systems are built.
